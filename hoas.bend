@@ -145,7 +145,112 @@ N/show (N/D a b) path =
     "]"
   ])
 
-  
+## PATH MATRICES
+type R = 
+  Z # Zero (0)
+  | U # Unit (1)
+  | Lp # q*
+  | L  # q
+  | Rp # p*
+  | R  # p
+  | (Mul left right) # pq
+  | (Add left right) # p + q
+  | (Tens left right) # p (x) q
+
+
+(UNTENS (R/Tens c d)) = (c, d)
+(UNTENS (R/Add a0 a1)) = 
+  let (c0, d0) = (UNTENS a0)
+  let (c1, d1) = (UNTENS a1)
+  ((R/Add c0 c1), (R/Add d0 d1))
+(UNTENS (R/Mul a0 a1)) = 
+  let (c0, d0) = (UNTENS a0)
+  let (c1, d1) = (UNTENS a1)
+  ((R/Mul c0 c1), (R/Mul d0 d1))
+(UNTENS x) = *
+
+(MUL (R/Tens c0 d0) b) =
+  let (c1, d1) = (UNTENS b)
+  (R/Tens (MUL c0 c1) (MUL d0 d1))
+(MUL a (R/Tens c1 d1)) =
+  let (c0, d0) = (UNTENS a)
+  (R/Tens (MUL c0 c1) (MUL d0 d1))
+(MUL R/Lp R/L) = R/U
+(MUL R/L R/Lp) = R/U
+(MUL R/Rp R/R) = R/U
+(MUL R/R R/Rp) = R/U
+(MUL R/Rp R/L) = R/Z
+(MUL R/Lp R/R) = R/Z
+(MUL (R/Add a0 b0) r) = (ADD (MUL a0 r) (MUL b0 r))
+(MUL r (R/Add a1 b1)) = (ADD (MUL r a1) (MUL r b1))
+(MUL R/Z b) = R/Z
+(MUL a R/Z) = R/Z
+(MUL R/U b) = b
+(MUL a R/U) = a
+(MUL a (R/Mul b c)) = (MUL (MUL a b) c)
+(MUL a b) = (R/Mul a b)
+
+(ADD R/Z b) = b
+(ADD a R/Z) = a
+(ADD R/U R/U) = R/U
+(ADD a b) = (R/Add a b)
+
+R/show R/U = "1"
+R/show R/Z = "0"
+R/show R/L = "l"
+R/show R/R = "r"
+R/show R/Lp = "l*"
+R/show R/Rp = "r*"
+R/show (R/Add a b) = (List/join [
+  (R/show a)
+  " + "
+  (R/show b)
+])
+R/show (R/Mul a b) = (List/join [
+  (R/show a)
+  (R/show b)
+])
+R/show (R/Tens a b) = (List/join [
+  "("
+  (R/show a)
+  " x "
+  (R/show b)
+  ")"
+])
+
+P/matrix tree = (P/matrix/go tree (R/Tens R/U R/U))
+P/matrix/go P/E rr = (R/Tens R/Z R/Z)
+P/matrix/go (P/C a b) rr = 
+  let l = (N/matrix/go a (MUL (R/Tens R/Lp R/U) rr))
+  let r = (P/matrix/go b (MUL (R/Tens R/Rp R/U) rr))
+  let l = (MUL (R/Tens R/L R/U) l)
+  let r = (MUL (R/Tens R/R R/U) r)
+  (ADD l r)
+P/matrix/go (P/D a b) rr = 
+  let l = (P/matrix/go a (MUL (R/Tens R/U R/Lp) rr))
+  let r = (P/matrix/go b (MUL (R/Tens R/U R/Rp) rr))
+  let l = (MUL (R/Tens R/U R/L) l)
+  let r = (MUL (R/Tens R/U R/R) r)
+  (ADD l r)
+P/matrix/go (P/V val) rr = (val rr)
+
+N/matrix tree = (N/matrix/go tree (R/Tens R/U R/U))
+N/matrix/go N/E rr = (R/Tens R/Z R/Z)
+N/matrix/go (N/C a b) rr = 
+  let l = (P/matrix/go a (MUL (R/Tens R/Lp R/U) rr))
+  let r = (N/matrix/go b (MUL (R/Tens R/Rp R/U) rr))
+  let l = (MUL (R/Tens R/L R/U) l)
+  let r = (MUL (R/Tens R/R R/U) r)
+  (ADD l r)
+N/matrix/go (N/D a b) rr = 
+  let l = (N/matrix/go a (MUL (R/Tens R/U R/Lp) rr))
+  let r = (N/matrix/go b (MUL (R/Tens R/U R/Rp) rr))
+  let l = (MUL (R/Tens R/U R/L) l)
+  let r = (MUL (R/Tens R/U R/R) r)
+  (ADD l r)
+N/matrix/go (N/V val) rr = (val λ$x rr $x)
+
+
 
 
 test1 = 
@@ -182,8 +287,16 @@ test3 =
 
 # Takes a PTree-variable out and displays it. Useful to extract values out of root wires.
 extract v = match v {
-  P/V: (P/show v.v Bits/E)
+  P/V: (R/show (P/matrix v.v) Bits/E)
   _: ":("
 }
 
-main = (extract test1)
+term1 = (P/D (P/C (N/V λ$y λx x) (P/V $x)) (P/C (N/V λ$x λx x) (P/V $y)))
+term2 = (P/C (N/V λ$x λx x) (P/V $x))
+# λf λx (f x)
+term3 = (P/C (N/C (P/V $a) (N/V λ$b λx x)) (P/C (N/V λ$a λx x) (P/V $b)))
+
+main = 
+  (R/show (P/matrix 
+    term1
+  ))
